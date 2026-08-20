@@ -1,0 +1,6 @@
+__pycache__
+.pytest_cache
+.venv
+.git
+telemetria.db
+*.pyc

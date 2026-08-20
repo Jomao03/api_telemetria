@@ -1,0 +1,27 @@
+name: Integracion Continua IoT
+
+on:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  pruebas-automaticas:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Clonar el código
+      uses: actions/checkout@v3
+
+    - name: Configurar Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Ejecutar pruebas con pytest
+      run: |
+        pytest test_api.py -v
