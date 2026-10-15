@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: TimescaleDB-IIoT
+    type: postgres
+    url: timescaledb:5432
+    user: postgres
+    secureJsonData:
+      password: password_industrial
+    jsonData:
+      database: telemetria_iiot
+      sslmode: disable
+      timescaledb: true
+    isDefault: true

@@ -1,19 +1,110 @@
 services:
-  # Definimos nuestro primer y único servicio (La API)
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: industwin-timescaledb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password_industrial
+      POSTGRES_DB: telemetria_iiot
+    ports:
+      - "5435:5432"
+    volumes:
+      - pg_telemetry_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telemetria_iiot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: industwin-redis
+    ports:
+      - "6379:6379"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: industwin-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: industwin-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   api-iot:
     build: .
     container_name: servidor-iot
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: sqlite:////data/telemetria.db
-    volumes:
-      - telemetry_data:/data
+      DATABASE_URL: postgresql://postgres:password_industrial@timescaledb:5432/telemetria_iiot
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
 
+  mqtt-ingestor:
+    build: .
+    container_name: industwin-mqtt-ingestor
+    command: python mqtt_ingestor.py
+    environment:
+      DATABASE_URL: postgresql://postgres:password_industrial@timescaledb:5432/telemetria_iiot
+      REDIS_URL: redis://redis:6379/0
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_started
+    
+  celery-worker:
+    build: .
+    container_name: industwin-celery-worker
+    command: celery -A celery_worker.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://postgres:password_industrial@timescaledb:5432/telemetria_iiot
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: industwin-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana_provisioning/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+        
 volumes:
-  telemetry_data:
+  pg_telemetry_data:
+  qdrant_data:
